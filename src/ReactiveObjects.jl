@@ -4,15 +4,15 @@ export @reactive
 
 using OrderedCollections
 
-struct ReactiveObject2{S, D}
+struct ReactiveObject{S, D}
     valid::Vector{Bool}
     data::D
-    ReactiveObject2(S, valid, data) = new{S, typeof(data)}(valid, data)
+    ReactiveObject(S, valid, data) = new{S, typeof(data)}(valid, data)
 end
-sig(::ReactiveObject2{S}) where {S} = S
-valid(obj::ReactiveObject2) = getfield(obj, :valid)
-data(obj::ReactiveObject2) = getfield(obj, :data)
-Base.show(io::IO, obj::ReactiveObject2) = begin 
+sig(::ReactiveObject{S}) where {S} = S
+valid(obj::ReactiveObject) = getfield(obj, :valid)
+data(obj::ReactiveObject) = getfield(obj, :data)
+Base.show(io::IO, obj::ReactiveObject) = begin 
     print(io, "ReactiveObject{", sig(obj), "}(\n")
     for (valid, (key, value)) in zip(valid(obj), pairs(data(obj)))
         # The printing of anonymous nodes, especially multiline ones, could be improved.
@@ -21,13 +21,13 @@ Base.show(io::IO, obj::ReactiveObject2) = begin
     print(io, ")")
 end
 
-Base.getproperty(obj::ReactiveObject2, x::Symbol) = begin
+Base.getproperty(obj::ReactiveObject, x::Symbol) = begin
     isvalid(obj, x) || compute!(obj, x)
     maybeunwrap(getfield(data(obj), x))
 end
-Base.setproperty!(obj::ReactiveObject2, x::Symbol, val) = begin
+Base.setproperty!(obj::ReactiveObject, x::Symbol, val) = begin
     # @debug "Setting $x property."
-    mycopy2!(getfield(data(obj), x), val)
+    mycopy!(getfield(data(obj), x), val)
     if isvalid(obj, x) 
         invalidatedependants!(obj, x)
     else
@@ -35,14 +35,14 @@ Base.setproperty!(obj::ReactiveObject2, x::Symbol, val) = begin
     end
     val
 end
-propertyidx(obj::ReactiveObject2, x::Symbol) = propertyidx(obj, Val(x))
-isvalid(obj::ReactiveObject2, x::Symbol) = valid(obj)[propertyidx(obj, x)]
-invalidate!(obj::ReactiveObject2, x::Symbol) = if isvalid(obj, x) 
+propertyidx(obj::ReactiveObject, x::Symbol) = propertyidx(obj, Val(x))
+isvalid(obj::ReactiveObject, x::Symbol) = valid(obj)[propertyidx(obj, x)]
+invalidate!(obj::ReactiveObject, x::Symbol) = if isvalid(obj, x) 
     valid(obj)[propertyidx(obj, x)] = false
     invalidatedependants!(obj, x)
 end
-invalidatedependants!(obj::ReactiveObject2, x::Symbol) = invalidatedependants!(obj, Val(x))
-compute!(obj::ReactiveObject2, x::Symbol) = compute!(obj, Val(x))
+invalidatedependants!(obj::ReactiveObject, x::Symbol) = invalidatedependants!(obj, Val(x))
+compute!(obj::ReactiveObject, x::Symbol) = compute!(obj, Val(x))
 
 maybewrap(x::Union{NamedTuple,Tuple}) = map(maybewrap, x)
 # This is probably often fine, but not always
@@ -52,9 +52,9 @@ maybewrap(x) = ismutable(x) ? x : Ref(x)
 maybeunwrap(x::Union{NamedTuple,Tuple}) = map(maybeunwrap, x)
 maybeunwrap(x) = x
 maybeunwrap(x::Ref) = x[]
-mycopy2!(x::Union{NamedTuple,Tuple}, val) = map(mycopy2!, x, val)
-mycopy2!(x, val) = copy!(x, val)
-mycopy2!(x::Ref, val) = (x[] = val)
+mycopy!(x::Union{NamedTuple,Tuple}, val) = map(mycopy!, x, val)
+mycopy!(x, val) = copy!(x, val)
+mycopy!(x::Ref, val) = (x[] = val)
 
 xeq(lhs, rhs) = Expr(:(=), lhs, rhs)
 xcall(args...; kwargs...) = Expr(:call, args...)
@@ -123,13 +123,12 @@ top_reactive_expr(x::Expr) = begin
     lhs, rhs = x.args
     @assert Meta.isexpr(lhs, :call)
     f, args... = lhs.args
-    # We should actually allow/encourage type annotations and keyword arguments
-    # @assert all(Base.Fix2(isa, Symbol), args) dump(args)
+    # We should actually allow/encourage type annotations
     dag = OrderedDict([arg=>OrderedSet{Symbol}() for arg in arg_symbols(args)])
     defs = []
     # The signature should/must actually include the types of the arguments
     sig = f
-    info = (;xobj=:(obj::$ReactiveObject2{$sig}), dag, defs)
+    info = (;xobj=:(obj::$ReactiveObject{$sig}), dag, defs)
     @assert Meta.isexpr(rhs, :block)
     # We should really be doing something with the line number nodes!
     # lnn = nothing
@@ -161,7 +160,7 @@ top_reactive_expr(x::Expr) = begin
     end
     n_locals = length(dag)
     push!(rhs.args, quote 
-        return $ReactiveObject2($sig, fill(true, $n_locals), $maybewrap((;$(keys(dag)...))))
+        return $ReactiveObject($sig, fill(true, $n_locals), $maybewrap((;$(keys(dag)...))))
     end)
     Expr(:block, x, defs...)
 end

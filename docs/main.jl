@@ -117,19 +117,14 @@ end
 
 begin 
 
-softabs(premetric; alpha=20.) = begin 
-    premetric_eigvals, eigvecs = eigen(premetric)
-    metric_eigvals = premetric_eigvals .* coth.(alpha * premetric_eigvals)
-    metric_eigvals, premetric_eigvals, eigvecs
-end
-
 @reactive riemannian_softabs_phasepoint(pot_f, premetric_f, pos, mom; alpha=20.) = begin 
     pot, dpot_dpos = pot_f(pos)
 
     # It would be better to have the interface be to compute (pot, dpot_dpos, premetric, premetric_grad) in one swoop, as 
     # the premetric will "usually" be the hessian computed via AD 
     premetric, premetric_grad = premetric_f(pos)
-    metric_eigvals, premetric_eigvals, Q = softabs(premetric; alpha)
+    premetric_eigvals, Q = eigen(premetric)
+    metric_eigvals = premetric_eigvals .* coth.(alpha * premetric_eigvals)
     Q_inv = Q / Diagonal(metric_eigvals)
 
     dkin_dmom = Q_inv * (Q' * mom)
