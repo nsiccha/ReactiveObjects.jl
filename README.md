@@ -1,4 +1,4 @@
-# ReactiveObjects.jl (soon to be) ReactiveKernels.jl
+# ReactiveObjects.jl (soon to be ReactiveKernels.jl)
 
 Provides reactive algorithmic kernels, i.e. ones that are clever about which parts get recomputed how and when.
 
