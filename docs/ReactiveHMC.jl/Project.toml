@@ -1,0 +1,9 @@
+name = "ReactiveHMC"
+uuid = "60dab7c7-6c51-471c-be3b-16fd2bd4e027"
+authors = ["Nikolas Siccha <nikolassiccha@gmail.com>"]
+version = "0.1.0"
+
+[deps]
+LazyArrays = "5078a376-72f3-5289-bfd5-ec5146d43c02"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+ReactiveObjects = "47fa113f-da65-44bb-8fb0-07b53f5ab554"
