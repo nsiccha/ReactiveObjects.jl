@@ -45,7 +45,7 @@ end
 
     premetric_eigvals, Q = eigen(Symmetric(premetric))
     @. metric_eigvals = premetric_eigvals * coth(alpha * premetric_eigvals)
-    @. Q_inv = Q / metric_eigvals
+    @. Q_inv = Q / metric_eigvals'
     @dottilde D = Q' * mom
 
     @dottilde dkin_dmom = Q_inv * D
@@ -116,13 +116,13 @@ end
 
     premetric_eigvals, Q = eigen(Symmetric(premetric))
     @. metric_eigvals = premetric_eigvals * coth(alpha * premetric_eigvals)
-    @. Q_inv = Q / metric_eigvals
+    @. Q_inv = Q / metric_eigvals'
     @dottilde D = Q' * mom
 
     @dottilde dprekin_dmom = Q_inv * D
     kin_sqrt_term = m*sqrt(1+dot(mom, dprekin_dmom)/(m*c)^2)
     dkin_dmom .= kin_sqrt_term .\ dprekin_dmom
-    kin = @node(.5 * logdet(chol_metric)) + c^2*kin_sqrt_term
+    kin = @node(.5 * @node(sum(log, metric_eigvals))) + c^2*kin_sqrt_term
 
     J .= Base.broadcasted(premetric_eigvals, metric_eigvals, premetric_eigvals', metric_eigvals') do pei, ei, pej, ej
         if pei == pej
