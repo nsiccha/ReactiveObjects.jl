@@ -1,2 +1,8 @@
 [deps]
+AdvancedHMC = "0bf59076-c3b1-5ca4-86bd-e02cd72cde3d"
+Chairmarks = "0ca39b1e-fe0b-4e98-acfc-b1656634c4de"
+LazyArrays = "5078a376-72f3-5289-bfd5-ec5146d43c02"
+Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+ReactiveHMC = "60dab7c7-6c51-471c-be3b-16fd2bd4e027"
 ReactiveObjects = "47fa113f-da65-44bb-8fb0-07b53f5ab554"

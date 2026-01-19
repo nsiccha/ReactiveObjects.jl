@@ -1,172 +1,130 @@
-using ReactiveObjects, LinearAlgebra
+using Chairmarks, ReactiveHMC, LinearAlgebra
+import AdvancedHMC: SoftAbsRiemannianMetric, RiemannianMetric, GaussianKinetic, Hamiltonian, step, GeneralizedLeapfrog, PhasePoint, DualValue
+
+
+bench(dim; stepsize=.1, n_fi_steps=10, n_steps=1) = begin
+    pos = randn(dim)
+    mom = randn(dim)
+
+    display(@be step(
+        GeneralizedLeapfrog(stepsize, n_fi_steps), 
+        (Hamiltonian(
+            SoftAbsRiemannianMetric((dim,), last ∘ premetric_f, last ∘ premetric_grad_f, 20.),
+            GaussianKinetic(), 
+            pot_f, grad_f
+        )), 
+        (PhasePoint(
+            pos, mom, DualValue(grad_f(copy(pos))...), DualValue(grad_f(copy(pos))...)
+        )), n_steps
+    ))
+
+    display(@be multistep(generalized_leapfrog!, 
+        (riemannian_softabs_phasepoint(pot_f, grad_f, premetric_f, premetric_grad_f, pos, mom)); 
+        stepsize, n_fi_steps, n_steps
+    ))
+end
 begin
 
-@reactive euclidean_phasepoint(pot_f, metric, pos, mom) = begin 
-    pot, dpot_dpos = pot_f(pos)
-
-    chol_metric = cholesky(metric)
-    dkin_dmom = chol_metric \ mom
-    # The logdet term could be left out as it doesn't change (unless the metric changes)
-    kin = .5 * (@node(logdet(chol_metric)) + dot(mom, dkin_dmom))
-
-    ham = pot + kin
-    dham_dpos = dpot_dpos
-    dham_dmom = dkin_dmom
-end
-
-leapfrog!(phasepoint; stepsize) = begin 
-    phasepoint.mom -= @. .5 * stepsize * phasepoint.dham_dpos
-    phasepoint.pos += @. stepsize * phasepoint.dham_dmom
-    phasepoint.mom -= @. .5 * stepsize * phasepoint.dham_dpos
-end
-
-pot_f(pos) = (.5sum(abs2, pos), pos)
-dim = 10
-metric = Diagonal(ones(dim))
-pos = randn(dim)
-mom = randn(dim)
-
-@info "Fully initialized QOIs"
-obj = euclidean_phasepoint(pot_f, metric, pos, mom)
-display(obj)
-
-@info "Automatically invalidated QOIs after modifying `pos`"
-obj.pos = randn(dim)
-display(obj)
-
-@info "Automatically recomputed `ham` ($(obj.ham))"
-display(obj)
-
-@info "After one leapfrog step"
-leapfrog!(obj; stepsize=.1)
-display(obj)
-
+    pot_f(pos) = .5sum(abs2, pos)
+    grad_f(pos) = (pot_f(pos), +pos)
+    premetric_f(pos) = (grad_f(pos)..., Diagonal(ones(length(pos))))
+    premetric_grad_f(pos) = (premetric_f(pos)..., zeros((length(pos), length(pos), length(pos))))
+    struct Counter{F}
+        n::Ref{Int}
+        f::F
+        Counter(f) = new{typeof(f)}(Ref(0), f)
+    end
+    (c::Counter)(args...; kwargs...) = begin
+        c.n[] += 1
+        c.f(args...; kwargs...)
+    end
+    # ENV["JULIA_DEBUG"] = ReactiveObjects
+    dim = 1
+    pos = randn(dim)
+    mom = randn(dim)
+    stepsize = .1
+    n_fi_steps = 10
+    n_steps = 20
+    f1 = Counter(pot_f)
+    f2 = Counter(grad_f)
+    f3 = Counter(premetric_f)
+    f4 = Counter(premetric_grad_f)
+    obj = riemannian_softabs_phasepoint(f1, f2, f3, f4, pos, mom)
+    multistep(generalized_leapfrog!, obj; stepsize, n_fi_steps, n_steps)
+    display((f1.n[], f2.n[], f3.n[], f4.n[]))
+    
+    f1.n[] = f2.n[] = f3.n[] = f4.n[] = 0
+    step(
+        GeneralizedLeapfrog(stepsize, n_fi_steps), 
+        (Hamiltonian(
+            SoftAbsRiemannianMetric((dim,), last ∘ f3, last ∘ f4, 20.),
+            GaussianKinetic(), 
+            f1, f2
+        )), 
+        (PhasePoint(
+            pos, mom, DualValue(grad_f(copy(pos))...), DualValue(grad_f(copy(pos))...)
+        )), n_steps
+    )
+    display((f1.n[], f2.n[], f3.n[], f4.n[]))
 end
 
 begin 
+    ENV["JULIA_DEBUG"] = nothing
 
-tr_prod(A::AbstractMatrix, B::AbstractMatrix) = sum(Base.broadcasted(*, A', B))
-
-@reactive riemannian_phasepoint(pot_f, metric_f, pos, mom) = begin
-    pot, dpot_dpos = pot_f(pos)
-
-    # It would be better to have the interface be to compute (pot, dpot_dpos, metric, metric_grad) in one swoop
-    metric, metric_grad = metric_f(pos)
-    chol_metric = cholesky(metric)
-    inv_metric = Symmetric(inv(chol_metric))
-    dkin_dmom = chol_metric \ mom
-    kin = .5 * (@node(logdet(chol_metric)) + dot(mom, dkin_dmom))
-    dkin_dpos = @node(map(eachindex(pos)) do i
-        .5 * tr_prod(inv_metric, metric_grad[:, :, i])
-    end) .- Base.broadcasted(eachindex(pos)) do i
-        .5 * dot(dkin_dmom, metric_grad[:, :, i], dkin_dmom)
+    bench(1)
+    for i in 4:7
+        dim, n_fi_steps, n_steps = 2^i, 2^(10-i), 2^(10-i)
+        @info (;dim, n_fi_steps, n_steps)
+        bench(dim; n_fi_steps)
     end
-
-    ham = pot + kin
-    dham_dpos = dpot_dpos + dkin_dpos
-    dham_dmom = dkin_dmom
-end
-generalized_leapfrog!(phasepoint; stepsize, n_fi_steps) = begin 
-    pos0, mom0 = map(copy, (phasepoint.pos, phasepoint.mom))
-    for _ in 1:n_fi_steps 
-        phasepoint.mom = @. mom0 - .5 * stepsize * phasepoint.dham_dpos
-    end
-    dham_dmom0 = copy(phasepoint.dham_dmom)
-    for _ in 1:n_fi_steps 
-        phasepoint.pos = @. pos0 + .5 * stepsize * (dham_dmom0 + phasepoint.dham_dmom)
-    end
-    phasepoint.mom -= @. .5 * stepsize * phasepoint.dham_dpos
 end
 
-implicit_midpoint!(phasepoint; stepsize, n_fi_steps) = begin 
-    pos0, mom0 = map(copy, (phasepoint.pos, phasepoint.mom))
-    for _ in 1:n_fi_steps 
-        (;dham_dmom, dham_dpos) = phasepoint
-        phasepoint.pos = @. pos0 + .5 * stepsize * dham_dmom
-        phasepoint.mom = @. mom0 - .5 * stepsize * dham_dpos
-    end
-    phasepoint.pos = @. 2 * phasepoint.pos - pos0
-    phasepoint.mom = @. 2 * phasepoint.mom - mom0
-end
+begin
+    using Plots, Random
+    dim = 2
+    p = plot()
+    q = plot()
+    permissive_leapfrog!(args...; n_fi_steps=missing, kwargs...) = leapfrog!(args...; kwargs...)
+    for stepper in (
+        # permissive_leapfrog!, 
+        # implicit_midpoint!, 
+        generalized_leapfrog!, 
+        multistep(generalized_leapfrog!; n_steps=100)
+    )
+        rng = Xoshiro(0)
+        pos = randn(rng, dim)
+        mom = randn(rng, dim)
+        c = m = 1.
+        T = 160
+        n_steps = 320
+        stepsize = T / n_steps
+        n_fi_steps = 10
+        f1 = Counter(pot_f)
+        f2 = Counter(grad_f)
+        f3 = Counter(premetric_f)
+        f4 = Counter(premetric_grad_f)
+        # phasepoint = euclidean_phasepoint(f1, f2, last(f3(pos)), pos, mom)
+        phasepoint = relativistic_euclidean_phasepoint(f1, f2, last(f3(pos)), pos, mom; c, m)
+        # phasepoint = riemannian_softabs_phasepoint(f1, f2, f3, f4, pos, mom)
+        # phasepoint = relativistic_riemannian_softabs_phasepoint(f1, f2, f3, f4, pos, mom; c, m)
+        traj = zeros((dim, n_steps))
+        hams = zeros(n_steps)
+        @time for i in 1:n_steps
+            # leapfrog!(phasepoint; stepsize)
+            # implicit_midpoint!(phasepoint; stepsize, n_fi_steps)
+            stepper(phasepoint; stepsize, n_fi_steps)
+            traj[:, i] .= phasepoint.pos
+            hams[i] = phasepoint.ham
 
-metric_f(pos) = begin
-    dim = length(pos)
-    Diagonal(ones(dim)), zeros((dim, dim, dim))
-end 
-
-@info "Fully initialized QOIs"
-obj = riemannian_phasepoint(pot_f, metric_f, pos, mom)
-display(obj)
-
-@info "Automatically invalidated QOIs after modifying `pos`"
-obj.pos = randn(dim)
-display(obj)
-
-@info "Automatically recomputed `ham` ($(obj.ham))"
-display(obj)
-
-@info "After one generalized leapfrog step"
-generalized_leapfrog!(obj; stepsize=.1, n_fi_steps=1)
-display(obj)
-
-@info "After one implicit midpoint step"
-implicit_midpoint!(obj; stepsize=.1, n_fi_steps=1)
-display(obj)
-
-end
-
-begin 
-
-@reactive riemannian_softabs_phasepoint(pot_f, premetric_f, pos, mom; alpha=20.) = begin 
-    pot, dpot_dpos = pot_f(pos)
-
-    # It would be better to have the interface be to compute (pot, dpot_dpos, premetric, premetric_grad) in one swoop, as 
-    # the premetric will "usually" be the hessian computed via AD 
-    premetric, premetric_grad = premetric_f(pos)
-    premetric_eigvals, Q = eigen(premetric)
-    metric_eigvals = premetric_eigvals .* coth.(alpha * premetric_eigvals)
-    Q_inv = Q / Diagonal(metric_eigvals)
-
-    dkin_dmom = Q_inv * (Q' * mom)
-    kin = .5 * (@node(sum(log, metric_eigvals)) + dot(mom, dkin_dmom))
-    J = broadcast(premetric_eigvals, metric_eigvals, premetric_eigvals', metric_eigvals') do pei, ei, pej, ej
-        if pei == pej
-            coth(alpha * pei) + pei * alpha * -csch(pei * alpha)^2 
-        else
-            ((ei - ej) / (pei - pej)) 
         end
+        display(stepper=>(f1.n[], f2.n[], f3.n[], f4.n[]))
+    # plot(traj')
+        plot!(p, eachrow(traj)...; marker=:circle, label=stepper)
+        plot!(q, hams; marker=:circle, label=stepper)
     end
-    D = Diagonal(Q' * mom)
-    dkin_dpos = @node(map(1:dim) do i
-        .5 * tr_prod(@node(Q_inv * Diagonal(view(J, diagind(J))) * Q'), premetric_grad[:, :, i])
-    end) - @node(map(1:dim) do i
-        # I wonder how clever Julia is about computing the below matrix product
-        .5 * tr_prod(@node(Q_inv * (D * J * D) * Q_inv'), premetric_grad[:, :, i])
-    end)
-
-    ham = pot + kin
-    dham_dpos = dpot_dpos + dkin_dpos
-    dham_dmom = dkin_dmom
-end
-
-
-@info "Fully initialized QOIs"
-obj = riemannian_softabs_phasepoint(pot_f, metric_f, pos, mom)
-display(obj)
-
-@info "Automatically invalidated QOIs after modifying `pos`"
-obj.pos = randn(dim)
-display(obj)
-
-@info "Automatically recomputed `ham` ($(obj.ham))"
-display(obj)
-
-@info "After one generalized leapfrog step"
-generalized_leapfrog!(obj; stepsize=.1, n_fi_steps=1)
-display(obj)
-
-@info "After one implicit midpoint step"
-implicit_midpoint!(obj; stepsize=.1, n_fi_steps=1)
-display(obj)
+    display(plot(p, q; layout=(:, 1), size=(800, 800)))
+    # obj = relativistic_riemannian_softabs_phasepoint(f1, f2, f3, f4, pos, mom; c, m)
+    # multistep(generalized_leapfrog!, obj; stepsize, n_fi_steps, n_steps)
+    # display((f1.n[], f2.n[], f3.n[], f4.n[]))
 
 end
