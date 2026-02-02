@@ -232,6 +232,9 @@ def!(lhs::Expr, stmt; info) = begin
         def!(lhsi, stmt; info)
     end 
 end
+method!(x; info) = x
+method!(x::Symbol; info) = x in keys(info.idxs) ? :(obj.$x) : x
+method!(x::Expr; info) = Expr(x.head, method!.(x.args; info)...)
 
 # trueidxs(itr) = filter(Base.Fix1(getindex, itr), eachindex(itr))
 
@@ -260,7 +263,12 @@ reactive_expr(x::Expr; __module__) = begin
     info = (;xobj, names, idxs, dependants, dependencies, coidxs, alldependants, alldependencies, restmts, defs)
     @assert Meta.isexpr(rhs, :block)
     stmts = []
+    methods = []
     for stmt in rhs.args
+        if Meta.isexpr(stmt, (:(=))) && Meta.isexpr(stmt.args[1], :call)
+            push!(methods, stmt)
+            continue
+        end
         push!(stmts, denode!(stmt; stmts))
     end 
     copy!(rhs.args, stmts)
@@ -318,6 +326,11 @@ reactive_expr(x::Expr; __module__) = begin
     push!(rhs.args, quote 
         return $ReactiveObject($sig, fill(true, $(length(names))), $maybewrap((;$(names...))))
     end)
+    for method in methods
+        lhs, rhs = method.args
+        insert!(lhs.args, 2, xobj)
+        push!(defs, xeq(lhs, method!(rhs; info)))
+    end
     Expr(:block, x, defs...)
 end
 
