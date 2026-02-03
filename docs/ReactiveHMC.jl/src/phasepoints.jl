@@ -46,9 +46,10 @@ end
     premetric_eigvals, Q = eigen(Symmetric(premetric))
     @. metric_eigvals = premetric_eigvals * coth(alpha * premetric_eigvals)
     @. Q_inv = Q / metric_eigvals'
-    @dottilde D = Q' * mom
+    Qp_mom = Q' * mom
+    Q_inv_Qp_mom = Q_inv * Diagonal(Qp_mom)
 
-    @dottilde dkin_dmom = Q_inv * D
+    dkin_dmom = Q_inv * Qp_mom
     kin = .5 * (@node(sum(log, metric_eigvals)) + dot(mom, dkin_dmom))
     J .= Base.broadcasted(premetric_eigvals, metric_eigvals, premetric_eigvals', metric_eigvals') do pei, ei, pej, ej
         if pei == pej
@@ -58,10 +59,10 @@ end
         end
     end
     dkin_dpos .= @node(map(eachslice(premetric_grad; dims=3)) do pgi
-        .5 * tr_prod(@node(Q_inv * Diagonal(J) * Q'), pgi)
+        .5 * tr_prod(@node(@node(Q_inv * Diagonal(J)) * Q'), pgi)
     end) .- Base.broadcasted(eachslice(premetric_grad; dims=3)) do pgi
         # I wonder how clever Julia is about computing the below matrix product
-        .5 * tr_prod(@node(Q_inv * (D .* J .* D') * Q_inv'), pgi)
+        .5 * tr_prod(@node(@node(Q_inv_Qp_mom * J) * Q_inv_Qp_mom'), pgi)
     end
 
     ham = pot + kin
@@ -117,12 +118,12 @@ end
     premetric_eigvals, Q = eigen(Symmetric(premetric))
     @. metric_eigvals = premetric_eigvals * coth(alpha * premetric_eigvals)
     @. Q_inv = Q / metric_eigvals'
-    @dottilde D = Q' * mom
+    D = Q' * mom
 
-    @dottilde dprekin_dmom = Q_inv * D
+    dprekin_dmom = Q_inv * D
     kin_sqrt_term = m*sqrt(1+dot(mom, dprekin_dmom)/(m*c)^2)
     dkin_dmom .= kin_sqrt_term .\ dprekin_dmom
-    kin = @node(.5 * @node(sum(log, metric_eigvals))) + c^2*kin_sqrt_term
+    kin = @node(.5 * sum(log, metric_eigvals)) + c^2*kin_sqrt_term
 
     J .= Base.broadcasted(premetric_eigvals, metric_eigvals, premetric_eigvals', metric_eigvals') do pei, ei, pej, ej
         if pei == pej

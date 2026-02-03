@@ -157,7 +157,7 @@ dependency!(lhs::Expr, rhs; info) = begin
     dependency!.(lhs.args, Ref(rhs); info)
 end
 localize(x::Expr; info) = Expr(x.head, localize.(x.args; info)...)
-localize(x::Symbol; info) = x in keys(info.idxs) ? :(DATA.$x) : (@assert x != :obj "What kind of madness makes you close over something named `obj`?"; x)
+localize(x::Symbol; info) = x in keys(info.idxs) ? :(DATA.$x) : x
 localize(x; info) = x
 lhs_symbols(x::Vector) = mapreduce(lhs_symbols, vcat, x; init=Symbol[])
 lhs_symbols(x::Symbol) = [x] 
@@ -213,8 +213,8 @@ def!(target::Symbol, stmt; info) = if info.idxs[target] > length(info.restmts)
     push!(info.defs, xeqinline(
         xcall(compute!, info.xobj, :(::Val{$(Meta.quot(target))})), 
         xblock(
-            :($V = $valid(obj)),
-            :($D = $data(obj)),
+            :($V = $valid(__self__)),
+            :($D = $data(__self__)),
             [
                 xblock(
                     :($V[$idx] || $restmt),
@@ -233,7 +233,7 @@ def!(lhs::Expr, stmt; info) = begin
     end 
 end
 method!(x; info) = x
-method!(x::Symbol; info) = x in keys(info.idxs) ? :(obj.$x) : x
+method!(x::Symbol; info) = x in keys(info.idxs) ? :(__self__.$x) : x
 method!(x::Expr; info) = Expr(x.head, method!.(x.args; info)...)
 
 # trueidxs(itr) = filter(Base.Fix1(getindex, itr), eachindex(itr))
@@ -249,7 +249,7 @@ reactive_expr(x::Expr; __module__) = begin
     # We should actually allow/encourage type annotations
     # The signature should/must actually include the types of the arguments
     sig = f
-    xobj = :(obj::$ReactiveObject{$sig})
+    xobj = :(__self__::$ReactiveObject{$sig})
     names = arg_symbols(args)
     idxs = Dict([arg=>i for (i, arg) in enumerate(names)])
     dependants = [Set{Int}() for _ in names]
@@ -296,9 +296,9 @@ reactive_expr(x::Expr; __module__) = begin
     push!(info.defs, xeqinline(
         xcall(restore!, xobj; force=true), 
         xblock(
-            :($V = $valid(obj)),
+            :($V = $valid(__self__)),
             :(force && ($V .= false)),
-            :($D = $data(obj)),
+            :($D = $data(__self__)),
             [
                 xblock(
                     :($V[$idx] || $restmt),
@@ -319,7 +319,7 @@ reactive_expr(x::Expr; __module__) = begin
             if length(alldependants[i]) == 0
                 nothing
             else
-                xblock(:(v = $valid(obj)), [:(v[$idx] = false) for idx in sort(collect(alldependants[i]))]...)
+                xblock(:(v = $valid(__self__)), [:(v[$idx] = false) for idx in sort(collect(alldependants[i]))]...)
             end
         ))
     end
@@ -327,9 +327,9 @@ reactive_expr(x::Expr; __module__) = begin
         return $ReactiveObject($sig, fill(true, $(length(names))), $maybewrap((;$(names...))))
     end)
     for method in methods
-        lhs, rhs = method.args
-        insert!(lhs.args, 2, xobj)
-        push!(defs, xeq(lhs, method!(rhs; info)))
+        lhs, rhs = method!(method; info).args
+        insert!(lhs.args, length(lhs.args) > 1 && Meta.isexpr(lhs.args[2], :parameters) ? 3 : 2, xobj)
+        push!(defs, xeq(lhs, rhs))
     end
     Expr(:block, x, defs...)
 end
