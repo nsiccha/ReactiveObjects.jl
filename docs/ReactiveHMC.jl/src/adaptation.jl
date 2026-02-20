@@ -12,3 +12,16 @@
         log_final += m^(-relaxation_exponent) * (log_current - log_final)
     end
 end
+
+smooth(prev, new, new_weight) = (1-new_weight)*prev + new_weight*new
+@reactive welford_var(dim) = begin
+    n = 0.
+    mean = zeros(dim)
+    var = zeros(dim)
+    ReactiveHMC.step!(x; dn=1.) = begin 
+        n += dn
+        w = dn / n
+        @. var = smooth(var, (x - smooth(mean, x, w)) * (x - mean), w)
+        @. mean = smooth(mean, x, w)
+    end
+end

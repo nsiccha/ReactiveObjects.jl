@@ -11,7 +11,8 @@ export dual_averaging_state, fit!
 
 include("integrators.jl")
 include("phasepoints.jl")
-include("nuts.jl")
+include("energies.jl")
+include("samplers.jl")
 include("adaptation.jl")
 
 end # module ReactiveHMC
