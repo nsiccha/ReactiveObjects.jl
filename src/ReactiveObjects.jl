@@ -1,6 +1,6 @@
 module ReactiveObjects
 
-export @reactive, restore!, fcopy!, rcopy!
+export @reactive, @invalidatedependants!, restore!, fcopy!, rcopy!
 
 using OrderedCollections
 
@@ -31,6 +31,24 @@ end
 @inline propertyidx(obj::ReactiveObject, x::Symbol) = propertyidx(obj, Val(x))
 @inline isvalid(obj::ReactiveObject, x::Symbol) = isvalid(obj, Val(x))
 @inline isvalid(obj::ReactiveObject, x::Val) = @inbounds valid(obj)[propertyidx(obj, x)]
+invalidatedependants!_exprs(::Symbol) = []
+invalidatedependants!_exprs(x::Expr) = if x.head == :(=)
+    vcat(
+        x, 
+        invalidatedependants!_exprs(x.args[1])
+    )
+elseif x.head == :(.)
+    vcat(
+        :($invalidatedependants!($(x.args...))), 
+        invalidatedependants!_exprs(x.args[1])
+    )
+else
+    dump(x)
+    error("Don't know how to handle invalidatedependants!_exprs($x)")
+end
+macro invalidatedependants!(x)
+    Expr(:block, invalidatedependants!_exprs(x)...) |> esc
+end
 @inline invalidatedependants!(obj::ReactiveObject, x::Symbol) = invalidatedependants!(obj, Val(x))
 @inline compute!(obj::ReactiveObject, x::Symbol) = compute!(obj, Val(x))
 """
@@ -118,8 +136,11 @@ arg_symbols(x::Expr) = if Meta.isexpr(x,  (:(::), :(=), :kw))
     arg_symbols(x.args[1])
 elseif x.head == :parameters
     arg_symbols(x.args)
+elseif x.head == :(...)
+    arg_symbols(x.args[1])
 else
-    error("Don't know how to handle $x")
+    dump(x)
+    error("Don't know how to handle arg_symbols($x)")
 end
 denode!(x::Expr; stmts) = if x.head == :macrocall && x.args[1] == Symbol("@node")
     @assert length(x.args) == 3
@@ -233,8 +254,30 @@ def!(lhs::Expr, stmt; info) = begin
     end 
 end
 method!(x; info) = x
-method!(x::Symbol; info) = x in keys(info.idxs) ? :(__self__.$x) : x
+method!(x::Symbol; info) = if x == :__type__
+    info.xobj.args[2]
+elseif x in keys(info.idxs)
+    :(__self__.$x)
+else 
+    x
+end
 method!(x::Expr; info) = Expr(x.head, method!.(x.args; info)...)
+ensuremethod!(x::Expr; info) = begin 
+    @assert x.head == :call
+    for (i, arg) in enumerate(x.args)
+        arg == :__self__ || continue
+        x.args[i] = info.xobj
+        return
+    end
+    insert!(x.args, length(x.args) > 1 && Meta.isexpr(x.args[2], :parameters) ? 3 : 2, info.xobj)
+end
+name(x::Expr) = if x.head == :(::)
+    name(x.args[1])
+else
+    nothing
+    # error("Don't know how to handle name($x)")
+end
+name(x::Symbol) = x
 
 # trueidxs(itr) = filter(Base.Fix1(getindex, itr), eachindex(itr))
 
@@ -328,7 +371,7 @@ reactive_expr(x::Expr; __module__) = begin
     end)
     for method in methods
         lhs, rhs = method!(method; info).args
-        insert!(lhs.args, length(lhs.args) > 1 && Meta.isexpr(lhs.args[2], :parameters) ? 3 : 2, xobj)
+        ensuremethod!(lhs; info)
         push!(defs, xeq(lhs, rhs))
     end
     Expr(:block, x, defs...)

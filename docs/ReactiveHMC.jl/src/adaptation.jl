@@ -18,10 +18,13 @@ smooth(prev, new, new_weight) = (1-new_weight)*prev + new_weight*new
     n = 0.
     mean = zeros(dim)
     var = zeros(dim)
-    ReactiveHMC.step!(x; dn=1.) = begin 
+    step!(x::AbstractVector; dn=1.) = begin 
         n += dn
         w = dn / n
         @. var = smooth(var, (x - smooth(mean, x, w)) * (x - mean), w)
         @. mean = smooth(mean, x, w)
+    end
+    step!(x::AbstractMatrix; kwargs...) = for xi in eachcol(x)
+        step!(__self__, xi; kwargs...)
     end
 end
