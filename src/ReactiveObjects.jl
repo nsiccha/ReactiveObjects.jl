@@ -307,13 +307,33 @@ reactive_expr(x::Expr; __module__) = begin
     @assert Meta.isexpr(rhs, :block)
     stmts = []
     methods = []
+    method_docs = OrderedDict{Int, String}()
+    prop_docs = OrderedDict{Symbol, String}()
     for stmt in rhs.args
-        if Meta.isexpr(stmt, (:(=))) && Meta.isexpr(stmt.args[1], :call)
-            push!(methods, stmt)
+        if isa(stmt, LineNumberNode)
+            push!(stmts, stmt)
             continue
         end
-        push!(stmts, denode!(stmt; stmts))
-    end 
+        # Julia parses "docstring" \n expr inside begin blocks as Core.@doc "docstring" expr
+        doc_str = nothing
+        if Meta.isexpr(stmt, :macrocall) && stmt.args[1] == GlobalRef(Core, Symbol("@doc"))
+            doc_str = stmt.args[3]
+            stmt = stmt.args[4]
+        end
+        if Meta.isexpr(stmt, (:(=))) && Meta.isexpr(stmt.args[1], :call)
+            push!(methods, stmt)
+            doc_str !== nothing && (method_docs[length(methods)] = doc_str)
+            continue
+        end
+        processed = denode!(stmt; stmts)
+        if doc_str !== nothing && Meta.isexpr(processed, (:(=), :(.=)))
+            plhs = processed.args[1]
+            for sym in (isa(plhs, Symbol) ? [plhs] : Meta.isexpr(plhs, :tuple) ? lhs_symbols(plhs.args) : Symbol[])
+                prop_docs[sym] = doc_str
+            end
+        end
+        push!(stmts, processed)
+    end
     copy!(rhs.args, stmts)
     for (i, stmt) in enumerate(rhs.args)
         # We should really be doing something with the line number nodes!
@@ -369,12 +389,26 @@ reactive_expr(x::Expr; __module__) = begin
     push!(rhs.args, quote 
         return $ReactiveObject($sig, fill(true, $(length(names))), $maybewrap((;$(names...))))
     end)
-    for method in methods
+    for (mi, method) in enumerate(methods)
         lhs, rhs = method!(method; info).args
         ensuremethod!(lhs; info)
-        push!(defs, xeq(lhs, rhs))
+        method_def = xeq(lhs, rhs)
+        if haskey(method_docs, mi)
+            push!(defs, Expr(:macrocall, GlobalRef(Base, Symbol("@doc")), nothing, method_docs[mi], method_def))
+        else
+            push!(defs, method_def)
+        end
     end
-    Expr(:block, x, defs...)
+    # Emit property docs as a supplementary @doc on the function name
+    if !isempty(prop_docs)
+        doc_lines = ["# Properties"]
+        for (prop_name, doc_str) in prop_docs
+            push!(doc_lines, "- `$prop_name`: $doc_str")
+        end
+        push!(defs, Expr(:macrocall, GlobalRef(Base, Symbol("@doc")), nothing, join(doc_lines, "\n"), f))
+    end
+    # @__doc__ lets Julia's doc system bind docstrings to the function def inside this block
+    Expr(:block, Expr(:macrocall, GlobalRef(Base, Symbol("@__doc__")), nothing, x), defs...)
 end
 
 end # module ReactiveObjects
