@@ -46,6 +46,13 @@ else
     dump(x)
     error("Don't know how to handle invalidatedependants!_exprs($x)")
 end
+"""
+    @invalidatedependants! obj.field = value
+
+Assign `value` to `obj.field` and invalidate all transitive dependants.
+Use this instead of plain `obj.field = value` when the assignment happens
+outside of `setproperty!` (e.g. in-place mutation of a sub-object's field).
+"""
 macro invalidatedependants!(x)
     Expr(:block, invalidatedependants!_exprs(x)...) |> esc
 end
@@ -97,6 +104,17 @@ end
 @inline maybeunwrap(x) = x
 @inline maybeunwrap(x::Ref) = x[]
 @inline maybeunwrap(x::Union{NamedTuple,Tuple}) = map(maybeunwrap, x)
+"""
+    rcopy!(dest, val)
+
+Reactive copy: copy `val` into `dest` in-place, dispatching by type.
+
+- Arrays: `copy!(dest, val)`
+- `Ref`: `dest[] = val`
+- `NamedTuple`/`Tuple`: element-wise `rcopy!`
+- `Function`: no-op
+- `ReactiveObject`: copies both `valid` flags and `data`
+"""
 @inline rcopy!(x::Union{NamedTuple,Tuple}, val) = map(rcopy!, x, val)
 @inline rcopy!(x, val) = begin
     # @debug "WARNING: Copying $(typeof(x)) <= $(typeof(val))"
@@ -109,6 +127,12 @@ end
 end
 @inline rcopy!(x::Ref{T}, val::T) where {T} = (x[] = val)
 @inline rcopy!(x::Ref{T}, val::Ref{T}) where {T} = (x[] = val[])
+"""
+    fcopy!(dest, f, args...; kwargs...)
+
+Compute `f(args...; kwargs...)` and [`rcopy!`](@ref) the result into `dest`.
+Used internally by `@reactive` to update fields from their defining expressions.
+"""
 @inline fcopy!(dest, f, args...; kwargs...) = rcopy!(dest, f(args...; kwargs...))
 @inline mymaterialize(x) = Base.materialize(x)
 
@@ -123,6 +147,31 @@ xblock(args...) = Expr(:block, args...)
 # I think there should be a better way to do this
 xcall(f::Function, args...; kwargs...) = xcall(Expr(:., @__MODULE__, Meta.quot(Symbol(f))), args...; kwargs...)
 
+"""
+    @reactive name(args...) = begin
+        derived = f(args...)
+        ...
+    end
+
+Define a reactive kernel with automatic dependency tracking and lazy recomputation.
+
+Each statement `lhs = rhs` in the body becomes a tracked property. When a property is
+set via `obj.field = value`, all transitive dependants are invalidated; when a property
+is read, it (and its dependencies) are recomputed on demand.
+
+Tuple destructuring (`a, b = f(x)`) groups multiple fields under a single computation.
+`@node(expr)` extracts a sub-expression into its own cached intermediate field.
+
+Methods can be defined inline:
+
+    scale(__self__, factor) = factor * y
+
+`__self__` refers to the reactive object. Bare field names in method bodies are
+rewritten to `__self__.field`.
+
+Definitions must be at **module scope** (the function name is used as a type parameter
+in `ReactiveObject{S}`, which requires a global binding).
+"""
 macro reactive(x)
     esc(reactive_expr(x; __module__))
 end

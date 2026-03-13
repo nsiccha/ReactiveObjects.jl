@@ -71,6 +71,24 @@ end
     c = a * 3
 end
 
+@reactive test_rcopy_nt(x) = begin
+    nt = (a=x, b=2x)
+end
+
+@reactive test_isemutable(x) = begin
+    y = [x, 2x]
+end
+
+@reactive test_diamond(a) = begin
+    b = a + 1
+    c = a + 2
+    d = b + c
+end
+
+@reactive test_setvalid(x) = begin
+    y = 2x
+end
+
 @testset "ReactiveObjects.jl" begin
 
     @testset "Basic @reactive" begin
@@ -191,6 +209,43 @@ end
         obj.x = 5.0
         @test obj.b == 12.0
         @test obj.c == 18.0
+    end
+
+    @testset "rcopy! NamedTuple" begin
+        obj = test_rcopy_nt(3.0)
+        @test obj.nt.a == 3.0
+        @test obj.nt.b == 6.0
+
+        r = Ref(1.0)
+        rcopy!(r, Ref(5.0))
+        @test r[] == 5.0
+    end
+
+    @testset "rcopy! Function no-op" begin
+        @test rcopy!(sin, cos) === nothing
+    end
+
+    @testset "isemutable" begin
+        @test ReactiveObjects.isemutable([1, 2, 3]) == true
+        @test ReactiveObjects.isemutable(1.0) == false
+        @test ReactiveObjects.isemutable(Ref(1.0)) == true
+    end
+
+    @testset "Diamond dependency graph" begin
+        obj = test_diamond(1.0)
+        @test obj.d == 5.0  # (1+1) + (1+2)
+
+        obj.a = 10.0
+        @test obj.d == 23.0  # (10+1) + (10+2)
+    end
+
+    @testset "setproperty! on invalid field marks valid" begin
+        obj = test_setvalid(3.0)
+        @test obj.y == 6.0
+
+        ReactiveObjects.valid(obj)[ReactiveObjects.propertyidx(obj, Val(:y))] = false
+        obj.y = 99.0
+        @test obj.y == 99.0
     end
 
 end

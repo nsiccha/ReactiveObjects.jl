@@ -1,4 +1,7 @@
-# ReactiveObjects.jl (soon to be ReactiveKernels.jl)
+# ReactiveObjects.jl
+
+[![Dev Docs](https://img.shields.io/badge/docs-dev-blue.svg)](https://nsiccha.github.io/ReactiveObjects.jl/dev/)
+[![CI](https://github.com/nsiccha/ReactiveObjects.jl/actions/workflows/test.yml/badge.svg)](https://github.com/nsiccha/ReactiveObjects.jl/actions/workflows/test.yml)
 
 Provides reactive algorithmic kernels, i.e. ones that are clever about which parts get recomputed how and when.
 
@@ -45,3 +48,8 @@ generalized_leapfrog!(phasepoint; stepsize, n_fi_steps) = begin
     @. phasepoint.mom -= .5 * stepsize * phasepoint.dham_dpos
 end
 ```
+
+## See also
+
+- [ReactiveHMC.jl](https://github.com/nsiccha/ReactiveHMC.jl) — HMC implementation built on ReactiveObjects.jl
+- [DynamicObjects.jl](https://github.com/nsiccha/DynamicObjects.jl) — non-reactive variant with lazy/cached properties
