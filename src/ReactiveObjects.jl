@@ -12,6 +12,13 @@ isemutabletype(T) = ismutabletype(T) || (
 
 @inline unval(x::Symbol) = x
 @inline unval(::Val{T}) where {T} = T
+"""
+    ReactiveObject{S, D}
+
+A reactive object with lazy dependency-driven recomputation. `S` is the kernel
+signature symbol, `D` is the data NamedTuple. Field access triggers `compute!`
+for any invalid dependencies.
+"""
 struct ReactiveObject{S, D}
     valid::Vector{Bool}
     data::D
@@ -59,7 +66,11 @@ end
 @inline invalidatedependants!(obj::ReactiveObject, x::Symbol) = invalidatedependants!(obj, Val(x))
 @inline compute!(obj::ReactiveObject, x::Symbol) = compute!(obj, Val(x))
 """
-Restores a `ReactiveObject`'s valid state.
+    restore!(obj; force=true)
+
+Restore a `ReactiveObject` by recomputing fields. With `force=true` (default),
+all fields are invalidated first; with `force=false`, only already-invalid fields
+are recomputed.
 """
 function restore! end
 
@@ -175,6 +186,12 @@ in `ReactiveObject{S}`, which requires a global binding).
 macro reactive(x)
     esc(reactive_expr(x; __module__))
 end
+"""
+    @node expr
+
+Cache a subexpression as an intermediate tracked field inside a `@reactive` block.
+Only valid inside `@reactive`; errors if used standalone.
+"""
 macro node(x)
     error("Macro @node doesn't work in a standalone context.")
 end
