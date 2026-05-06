@@ -247,12 +247,18 @@ localize(x::Expr; info) = Expr(x.head, localize.(x.args; info)...)
 localize(x::Symbol; info) = x in keys(info.idxs) ? :(DATA.$x) : x
 localize(x; info) = x
 lhs_symbols(x::Vector) = mapreduce(lhs_symbols, vcat, x; init=Symbol[])
-lhs_symbols(x::Symbol) = [x] 
+lhs_symbols(x::Symbol) = [x]
 lhs_symbols(x::Expr) = if x.head == :tuple
     lhs_symbols(x.args)
 else
     error("Don't know how to handle $(x.head)")
 end
+
+# LHS symbols carrying a docstring on a `:(=)` / `:(.=)` statement: bare Symbol,
+# tuple destructure, or anything else (no doc target).
+_doc_lhs_syms(plhs::Symbol) = (plhs,)
+_doc_lhs_syms(plhs::Expr) = Meta.isexpr(plhs, :tuple) ? lhs_symbols(plhs.args) : Symbol[]
+_doc_lhs_syms(_) = Symbol[]
 coidxs!(i, lhs::Expr; info) = begin
     @assert Meta.isexpr(lhs, (:tuple, :parameters))
     for lhsi in lhs.args
@@ -393,8 +399,7 @@ reactive_expr(x::Expr; __module__) = begin
         end
         processed = denode!(stmt; stmts)
         if doc_str !== nothing && Meta.isexpr(processed, (:(=), :(.=)))
-            plhs = processed.args[1]
-            for sym in (isa(plhs, Symbol) ? [plhs] : Meta.isexpr(plhs, :tuple) ? lhs_symbols(plhs.args) : Symbol[])
+            for sym in _doc_lhs_syms(processed.args[1])
                 prop_docs[sym] = doc_str
             end
         end
