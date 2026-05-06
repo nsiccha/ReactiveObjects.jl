@@ -208,12 +208,9 @@ else
     dump(x)
     error("Don't know how to handle arg_symbols($x)")
 end
-_is_lnn(::LineNumberNode) = true
-_is_lnn(_) = false
 denode!(x::Expr; stmts) = if x.head == :macrocall && x.args[1] == Symbol("@node")
     @assert length(x.args) == 3
-    _, lnn, node = x.args
-    @assert _is_lnn(lnn)
+    _, _, node = x.args
     snode = Symbol(node)
     push!(stmts, denode!(xeq(snode, node); stmts))
     snode
@@ -261,6 +258,43 @@ end
 _doc_lhs_syms(plhs::Symbol) = (plhs,)
 _doc_lhs_syms(plhs::Expr) = Meta.isexpr(plhs, :tuple) ? lhs_symbols(plhs.args) : Symbol[]
 _doc_lhs_syms(_) = Symbol[]
+
+# Top-level statement classifier inside a @reactive body. LineNumberNodes are
+# preserved verbatim; everything else is unwrapped from any leading @doc,
+# split off if it's a method definition, otherwise denode!d and recorded.
+_process_top!(stmt::LineNumberNode; stmts, kwargs...) = (push!(stmts, stmt); nothing)
+_process_top!(stmt; stmts, methods, method_docs, prop_docs) = begin
+    doc_str = nothing
+    if Meta.isexpr(stmt, :macrocall) && stmt.args[1] == GlobalRef(Core, Symbol("@doc"))
+        doc_str = stmt.args[3]
+        stmt = stmt.args[4]
+    end
+    if Meta.isexpr(stmt, :(=)) && Meta.isexpr(stmt.args[1], :call)
+        push!(methods, stmt)
+        doc_str !== nothing && (method_docs[length(methods)] = doc_str)
+        return nothing
+    end
+    processed = denode!(stmt; stmts)
+    if doc_str !== nothing && Meta.isexpr(processed, (:(=), :(.=)))
+        for sym in _doc_lhs_syms(processed.args[1])
+            prop_docs[sym] = doc_str
+        end
+    end
+    push!(stmts, processed)
+    nothing
+end
+
+# Second-pass per-statement: skip LineNumberNodes, expand macrocalls, then run
+# dependency analysis and emit the recompute step.
+_process_dep!(stmt::LineNumberNode, i, rhs_args, info, __module__) = nothing
+_process_dep!(stmt, i, rhs_args, info, __module__) = begin
+    Meta.isexpr(stmt, :macrocall) && (stmt = macroexpand(__module__, stmt; recursive=false))
+    @assert Meta.isexpr(stmt, (:(=), :(.=)))
+    slhs, srhs = stmt.args
+    Meta.isexpr(stmt, :(.=)) && (rhs_args[i] = xeq(slhs, xcall(mymaterialize, srhs)))
+    dependency!(slhs, srhs; info)
+    def!(slhs, stmt; info)
+end
 coidxs!(i, lhs::Expr; info) = begin
     @assert Meta.isexpr(lhs, (:tuple, :parameters))
     for lhsi in lhs.args
@@ -384,40 +418,11 @@ reactive_expr(x::Expr; __module__) = begin
     method_docs = OrderedDict{Int, String}()
     prop_docs = OrderedDict{Symbol, String}()
     for stmt in rhs.args
-        if _is_lnn(stmt)
-            push!(stmts, stmt)
-            continue
-        end
-        # Julia parses "docstring" \n expr inside begin blocks as Core.@doc "docstring" expr
-        doc_str = nothing
-        if Meta.isexpr(stmt, :macrocall) && stmt.args[1] == GlobalRef(Core, Symbol("@doc"))
-            doc_str = stmt.args[3]
-            stmt = stmt.args[4]
-        end
-        if Meta.isexpr(stmt, (:(=))) && Meta.isexpr(stmt.args[1], :call)
-            push!(methods, stmt)
-            doc_str !== nothing && (method_docs[length(methods)] = doc_str)
-            continue
-        end
-        processed = denode!(stmt; stmts)
-        if doc_str !== nothing && Meta.isexpr(processed, (:(=), :(.=)))
-            for sym in _doc_lhs_syms(processed.args[1])
-                prop_docs[sym] = doc_str
-            end
-        end
-        push!(stmts, processed)
+        _process_top!(stmt; stmts, methods, method_docs, prop_docs)
     end
     copy!(rhs.args, stmts)
     for (i, stmt) in enumerate(rhs.args)
-        # We should really be doing something with the line number nodes!
-        _is_lnn(stmt) && continue
-        Meta.isexpr(stmt, :macrocall) && (stmt = macroexpand(__module__, stmt; recursive=false))
-        # We should at least also allow docstrings!
-        @assert Meta.isexpr(stmt, (:(=), :(.=)))
-        slhs, srhs = stmt.args
-        Meta.isexpr(stmt, :(.=)) && (rhs.args[i] = xeq(slhs, xcall(mymaterialize, srhs)) )
-        dependency!(slhs, srhs; info)
-        def!(slhs, stmt; info)
+        _process_dep!(stmt, i, rhs.args, info, __module__)
     end
     allalldependencies = sort(
         1:length(names); 
