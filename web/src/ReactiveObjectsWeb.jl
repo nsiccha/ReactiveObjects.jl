@@ -1,7 +1,7 @@
 module ReactiveObjectsWeb
 
 using HTMXObjects
-using TestModules, Random
+using TestModules
 
 include("test/runtests.jl")
 

@@ -1,4 +1,4 @@
-using TestModules, ReactiveObjects, Random
+using TestModules, ReactiveObjects
 
 # --- @reactive definitions at module scope ---
 
