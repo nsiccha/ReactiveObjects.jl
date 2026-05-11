@@ -14,6 +14,7 @@ include("test/runtests.jl")
     ); pico_version="2")
 
     @include tests = TestRoutes(; __req__, test_module=@__MODULE__)
+    @include structure = HTMXObjects.StructureRoutes(; root=AppContext)
 end
 
 function __init__()
