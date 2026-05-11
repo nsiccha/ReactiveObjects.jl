@@ -60,6 +60,23 @@ export default defineConfig({
     define: {
       __DEPLOY_ABSPATH__: JSON.stringify('REPLACE_ME_DOCUMENTER_VITEPRESS_DEPLOY_ABSPATH'),
     },
+    server: {
+      // Bind to all interfaces so the dev server is reachable on LAN.
+      host: true,
+      proxy: {
+        // Live ReactiveObjects gallery embedding (dev only).
+        // `<div hx-get="/live-reactiveobjects/…">` forwards to the running
+        // web app on :8103 so the docs page shows live state. In production,
+        // the same path is served from the recorded static HTML under
+        // `public/live-reactiveobjects/`. Override the target via
+        // `RO_DEV_TARGET=http://host:port` env.
+        '/live-reactiveobjects': {
+          target: process.env.RO_DEV_TARGET || 'http://localhost:8103',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/live-reactiveobjects/, ''),
+        }
+      }
+    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '../components')

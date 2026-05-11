@@ -14,6 +14,11 @@ import AuthorBadge from '@/AuthorBadge.vue'
 import Authors from '@/Authors.vue'
 import Banner from '@/Banner.vue'
 
+// Synced from HTMXObjects/assets/vitepress/htmxo-embed.ts by
+// `HTMXObjects.vitepress_theme_install` in make.jl. Don't edit in place
+// — edit the upstream and re-run make.jl.
+import { setupHtmxoEmbed } from './htmxo-embed'
+
 import { enhanceAppWithTabs } from 'vitepress-plugin-tabs/client'
 
 import '@nolebase/vitepress-plugin-enhanced-readabilities/client/style.css'
@@ -37,6 +42,12 @@ export const Theme: ThemeConfig = {
     app.component('VersionPicker', VersionPicker);
     app.component('AuthorBadge', AuthorBadge)
     app.component('Authors', Authors)
+    // HTMXObjects embed wiring: data-hx-base resolution + SPA route
+    // re-process + .htmxo-embed link rewriting. Defaults the proxy
+    // prefix to `/live-reactiveobjects` (matches the Vite proxy in
+    // config.mts and the committed recordings under
+    // public/live-reactiveobjects/).
+    setupHtmxoEmbed(router, { proxyPrefix: '/live-reactiveobjects' });
   }
 }
 export default Theme
