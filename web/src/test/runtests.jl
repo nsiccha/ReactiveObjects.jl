@@ -7,11 +7,6 @@ using TestModules, ReactiveObjects
     w = 2z
 end
 
-@reactive _test_dep(x, y) = begin
-    z = x + y
-    w = z * 2
-end
-
 @reactive _test_destruct(x) = begin
     a, b = (x, 2x)
     c = a + b
@@ -99,7 +94,7 @@ end
 end
 
 @testset "Dependency invalidation" begin
-    obj = _test_dep(1.0, 2.0)
+    obj = _test_basic(1.0, 2.0)
     @test obj.z == 3.0
     @test obj.w == 6.0
 
