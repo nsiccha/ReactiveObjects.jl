@@ -31,7 +31,7 @@ include("test/runtests.jl")
     # gallery file returns a NamedTuple `(; kernel, obj, fields, steps)`.
     # The `@reactive` macro defines `_demo_*` at module scope here when
     # the file is `Base.include`d into `@__MODULE__`.
-    @struct entry(id) = begin
+    @include entry(id) = begin
         item        = find_item(gallery, id)
         title       = item.title
         description = item.description
