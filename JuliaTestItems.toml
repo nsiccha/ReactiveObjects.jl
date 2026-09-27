@@ -1,0 +1,4 @@
+# Scope `@run_package_tests` discovery (which walks the whole package root, but
+# does not descend symlinks) to the package suite. `test/` is a symlink to
+# `web/src/test/`, so the real path is what discovery sees.
+include = ["/web/src/test/"]
