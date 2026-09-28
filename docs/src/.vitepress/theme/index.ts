@@ -14,9 +14,10 @@ import AuthorBadge from '@/AuthorBadge.vue'
 import Authors from '@/Authors.vue'
 import Banner from '@/Banner.vue'
 
-// Synced from HTMXObjects/assets/vitepress/htmxo-embed.ts by
-// `HTMXObjects.vitepress_theme_install` in make.jl. Don't edit in place
-// — edit the upstream and re-run make.jl.
+// Snapshot of HTMXObjects/assets/vitepress/htmxo-embed.ts, synced from
+// HTMXObjects@devibe c9a1bdcd1c5933fa936c409646278ca0c3bf3f18 (see the
+// note in docs/make.jl). Don't edit in place — edit the upstream and
+// re-sync the file manually.
 import { setupHtmxoEmbed } from './htmxo-embed'
 
 import { enhanceAppWithTabs } from 'vitepress-plugin-tabs/client'

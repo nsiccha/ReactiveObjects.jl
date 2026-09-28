@@ -1,9 +1,13 @@
 using Documenter, DocumenterVitepress, ReactiveObjects
-import HTMXObjects
 
-# Sync the canonical `htmxo-embed.ts` into our theme dir before
-# DocumenterVitepress runs. The theme's `index.ts` imports from it.
-HTMXObjects.vitepress_theme_install(joinpath(@__DIR__, "src", ".vitepress", "theme"))
+# Note: the theme files under `src/.vitepress/theme/` (`htmxo-embed.ts`,
+# `htmxo-gallery.css`, `htmxo-syntax.css`) are a committed snapshot synced
+# from HTMXObjects@devibe c9a1bdcd1c5933fa936c409646278ca0c3bf3f18 —
+# `make.jl` used to call `HTMXObjects.vitepress_theme_install(...)` here to
+# auto-sync them, but that pinned the whole docs env on HTMXObjects'
+# unregistered closure (HTMX was never registered, so every Docs run since
+# May failed at resolve). Re-sync the snapshot manually from
+# `HTMXObjects/assets/vitepress/` when the upstream embed runtime changes.
 
 makedocs(
     sitename = "ReactiveObjects.jl",
