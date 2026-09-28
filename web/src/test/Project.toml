@@ -1,0 +1,7 @@
+[deps]
+ReactiveObjects = "47fa113f-da65-44bb-8fb0-07b53f5ab554"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+TestItemRunner = "f8b46487-2199-4994-9208-9a1283c18c0a"
+
+[compat]
+TestItemRunner = "1"
